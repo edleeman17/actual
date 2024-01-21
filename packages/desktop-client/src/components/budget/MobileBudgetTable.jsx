@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
+import React, { memo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 
 import memoizeOne from 'memoize-one';
@@ -7,6 +7,10 @@ import { rolloverBudget, reportBudget } from 'loot-core/src/client/queries';
 import * as monthUtils from 'loot-core/src/shared/months';
 
 import { useFeatureFlag } from '../../hooks/useFeatureFlag';
+import {
+  SingleActiveEditFormProvider,
+  useSingleActiveEditForm,
+} from '../../hooks/useSingleActiveEditForm';
 import {
   SvgArrowThinLeft,
   SvgArrowThinRight,
@@ -134,6 +138,7 @@ function BudgetCell({
   month,
   onBudgetAction,
   onEdit,
+  onBlur,
   isEditing,
 }) {
   const sheetValue = useSheetValue(binding);
@@ -146,7 +151,7 @@ function BudgetCell({
   }
 
   function onAmountClick(e) {
-    onEdit?.(categoryId);
+    onEdit?.();
   }
 
   return (
@@ -162,7 +167,7 @@ function BudgetCell({
         focused={isEditing}
         textStyle={{ ...styles.smallText, ...textStyle }}
         onUpdate={updateBudgetAmount}
-        onBlur={() => onEdit?.(null)}
+        onBlur={onBlur}
       />
       <View
         role="button"
@@ -245,10 +250,6 @@ const ExpenseCategory = memo(function ExpenseCategory({
   month,
   editMode,
   onEdit,
-  isEditingBudget,
-  onEditBudget,
-  isBalanceActionMenuOpen,
-  onOpenBalanceActionMenu,
   onBudgetAction,
   show3Cols,
   showBudgetedCol,
@@ -256,11 +257,22 @@ const ExpenseCategory = memo(function ExpenseCategory({
   const opacity = blank ? 0 : 1;
   const balanceTooltip = useTooltip();
 
-  useEffect(() => {
-    if (isBalanceActionMenuOpen) {
+  const [isEditingBudget, setIsEditingBudget] = useState(false);
+  const { onRequestActiveEdit, onClearActiveEdit } = useSingleActiveEditForm();
+
+  const onEditBudget = () => {
+    onRequestActiveEdit(`${category.id}-budget`, () => {
+      setIsEditingBudget(true);
+      return () => setIsEditingBudget(false);
+    });
+  };
+
+  const onOpenBalanceActionMenu = () => {
+    onRequestActiveEdit(`${category.id}-balance`, () => {
       balanceTooltip.open();
-    }
-  }, [isBalanceActionMenuOpen, balanceTooltip]);
+      return () => balanceTooltip.close();
+    });
+  };
 
   const listItemRef = useRef();
 
@@ -318,6 +330,7 @@ const ExpenseCategory = memo(function ExpenseCategory({
           onBudgetAction={onBudgetAction}
           isEditing={isEditingBudget}
           onEdit={onEditBudget}
+          onBlur={onClearActiveEdit}
         />
         <View
           style={{
@@ -350,7 +363,7 @@ const ExpenseCategory = memo(function ExpenseCategory({
         >
           <span
             role="button"
-            onPointerUp={() => onOpenBalanceActionMenu?.(category.id)}
+            onPointerUp={() => onOpenBalanceActionMenu?.()}
             onPointerDown={e => e.preventDefault()}
           >
             <BalanceWithCarryover
@@ -372,7 +385,7 @@ const ExpenseCategory = memo(function ExpenseCategory({
                   monthIndex={monthUtils.getMonthIndex(month)}
                   onBudgetAction={_onBudgetAction}
                   onClose={() => {
-                    onOpenBalanceActionMenu?.(null);
+                    onClearActiveEdit();
                   }}
                 />
               ) : (
@@ -383,7 +396,7 @@ const ExpenseCategory = memo(function ExpenseCategory({
                   monthIndex={monthUtils.getMonthIndex(month)}
                   onBudgetAction={_onBudgetAction}
                   onClose={() => {
-                    onOpenBalanceActionMenu?.(null);
+                    onClearActiveEdit();
                   }}
                 />
               ))}
@@ -798,10 +811,6 @@ const ExpenseGroup = memo(function ExpenseGroup({
   editMode,
   onEditGroup,
   onEditCategory,
-  editingBudgetCategoryId,
-  onEditCategoryBudget,
-  openBalanceActionMenuId,
-  onOpenBalanceActionMenu,
   // gestures,
   month,
   // onReorderCategory,
@@ -876,10 +885,6 @@ const ExpenseGroup = memo(function ExpenseGroup({
       {group.categories
         .filter(category => !category.hidden || showHiddenCategories)
         .map((category, index) => {
-          const isEditingCategoryBudget =
-            editingBudgetCategoryId === category.id;
-          const isBalanceActionMenuOpen =
-            openBalanceActionMenuId === category.id;
           return (
             <ExpenseCategory
               key={category.id}
@@ -918,10 +923,6 @@ const ExpenseGroup = memo(function ExpenseGroup({
               showBudgetedCol={showBudgetedCol}
               editMode={editMode}
               onEdit={onEditCategory}
-              isEditingBudget={isEditingCategoryBudget}
-              onEditBudget={onEditCategoryBudget}
-              isBalanceActionMenuOpen={isBalanceActionMenuOpen}
-              onOpenBalanceActionMenu={onOpenBalanceActionMenu}
               // gestures={gestures}
               month={month}
               // onReorder={onReorderCategory}
@@ -1022,10 +1023,6 @@ function BudgetGroups({
   categoryGroups,
   onEditGroup,
   onEditCategory,
-  editingBudgetCategoryId,
-  onEditCategoryBudget,
-  openBalanceActionMenuId,
-  onOpenBalanceActionMenu,
   editMode,
   gestures,
   month,
@@ -1051,71 +1048,67 @@ function BudgetGroups({
   const { incomeGroup, expenseGroups } = separateGroups(categoryGroups);
 
   return (
-    <View
-      data-testid="budget-groups"
-      style={{ flex: '1 0 auto', overflowY: 'auto', paddingBottom: 15 }}
-    >
-      {expenseGroups
-        .filter(group => !group.hidden || showHiddenCategories)
-        .map(group => {
-          return (
-            <ExpenseGroup
-              key={group.id}
-              type={type}
-              group={group}
-              showBudgetedCol={showBudgetedCol}
-              gestures={gestures}
-              month={month}
-              editMode={editMode}
-              onEditGroup={onEditGroup}
-              onEditCategory={onEditCategory}
-              editingBudgetCategoryId={editingBudgetCategoryId}
-              onEditCategoryBudget={onEditCategoryBudget}
-              openBalanceActionMenuId={openBalanceActionMenuId}
-              onOpenBalanceActionMenu={onOpenBalanceActionMenu}
-              onSaveCategory={onSaveCategory}
-              onDeleteCategory={onDeleteCategory}
-              onAddCategory={onAddCategory}
-              onReorderCategory={onReorderCategory}
-              onReorderGroup={onReorderGroup}
-              onBudgetAction={onBudgetAction}
-              show3Cols={show3Cols}
-              showHiddenCategories={showHiddenCategories}
-              pushModal={pushModal}
-            />
-          );
-        })}
-
+    <SingleActiveEditFormProvider formName="mobile-budget-table">
       <View
-        style={{
-          alignItems: 'flex-start',
-          justifyContent: 'flex-start',
-        }}
+        data-testid="budget-groups"
+        style={{ flex: '1 0 auto', overflowY: 'auto', paddingBottom: 15 }}
       >
-        <Button onClick={onAddGroup} style={{ fontSize: 12, margin: 10 }}>
-          Add Group
-        </Button>
-      </View>
+        {expenseGroups
+          .filter(group => !group.hidden || showHiddenCategories)
+          .map(group => {
+            return (
+              <ExpenseGroup
+                key={group.id}
+                type={type}
+                group={group}
+                showBudgetedCol={showBudgetedCol}
+                gestures={gestures}
+                month={month}
+                editMode={editMode}
+                onEditGroup={onEditGroup}
+                onEditCategory={onEditCategory}
+                onSaveCategory={onSaveCategory}
+                onDeleteCategory={onDeleteCategory}
+                onAddCategory={onAddCategory}
+                onReorderCategory={onReorderCategory}
+                onReorderGroup={onReorderGroup}
+                onBudgetAction={onBudgetAction}
+                show3Cols={show3Cols}
+                showHiddenCategories={showHiddenCategories}
+                pushModal={pushModal}
+              />
+            );
+          })}
 
-      {incomeGroup && (
-        <IncomeGroup
-          type={type}
-          group={incomeGroup}
-          month={month}
-          onAddCategory={onAddCategory}
-          onSaveCategory={onSaveCategory}
-          onDeleteCategory={onDeleteCategory}
-          showHiddenCategories={showHiddenCategories}
-          editMode={editMode}
-          onEditGroup={onEditGroup}
-          onEditCategory={onEditCategory}
-          editingBudgetCategoryId={editingBudgetCategoryId}
-          onEditCategoryBudget={onEditCategoryBudget}
-          onBudgetAction={onBudgetAction}
-          pushModal={pushModal}
-        />
-      )}
-    </View>
+        <View
+          style={{
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+          }}
+        >
+          <Button onClick={onAddGroup} style={{ fontSize: 12, margin: 10 }}>
+            Add Group
+          </Button>
+        </View>
+
+        {incomeGroup && (
+          <IncomeGroup
+            type={type}
+            group={incomeGroup}
+            month={month}
+            onAddCategory={onAddCategory}
+            onSaveCategory={onSaveCategory}
+            onDeleteCategory={onDeleteCategory}
+            showHiddenCategories={showHiddenCategories}
+            editMode={editMode}
+            onEditGroup={onEditGroup}
+            onEditCategory={onEditCategory}
+            onBudgetAction={onBudgetAction}
+            pushModal={pushModal}
+          />
+        )}
+      </View>
+    </SingleActiveEditFormProvider>
   );
 }
 
@@ -1150,10 +1143,6 @@ export function BudgetTable({
   pushModal,
   onEditGroup,
   onEditCategory,
-  editingBudgetCategoryId,
-  onEditCategoryBudget,
-  openBalanceActionMenuId,
-  onOpenBalanceActionMenu,
   ...props
 }) {
   const { width } = useResponsive();
@@ -1393,10 +1382,6 @@ export function BudgetTable({
                 editMode={editMode}
                 onEditGroup={onEditGroup}
                 onEditCategory={onEditCategory}
-                editingBudgetCategoryId={editingBudgetCategoryId}
-                onEditCategoryBudget={onEditCategoryBudget}
-                openBalanceActionMenuId={openBalanceActionMenuId}
-                onOpenBalanceActionMenu={onOpenBalanceActionMenu}
                 onSaveCategory={onSaveCategory}
                 onDeleteCategory={onDeleteCategory}
                 onAddCategory={onAddCategory}
@@ -1431,10 +1416,6 @@ export function BudgetTable({
                 editMode={editMode}
                 onEditGroup={onEditGroup}
                 onEditCategory={onEditCategory}
-                editingBudgetCategoryId={editingBudgetCategoryId}
-                onEditCategoryBudget={onEditCategoryBudget}
-                openBalanceActionMenuId={openBalanceActionMenuId}
-                onOpenBalanceActionMenu={onOpenBalanceActionMenu}
                 onSaveCategory={onSaveCategory}
                 onDeleteCategory={onDeleteCategory}
                 onAddCategory={onAddCategory}
